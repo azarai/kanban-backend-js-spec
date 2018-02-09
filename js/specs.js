@@ -48,14 +48,6 @@ function defineSpecsFor(apiRoot) {
 
   describe("Kanban-Backend API residing at " + apiRoot, function () {
 
-    function createFreshTodoAndGetItsUrl(params) {
-      var postParams = _.defaults((params || {}), {
-        title: "blah"
-      });
-      return postRoot(postParams)
-        .then(urlFromTodo);
-    };
-
     describe("register and login", function () {
       specify("register a new user", function () {
         return post(apiRoot + "/register", { username: username, password: "123456" }).
@@ -68,7 +60,7 @@ function defineSpecsFor(apiRoot) {
           })
       });
 
-      specify("login user", function () {
+      function login() {
         var options = {
           beforeSend: function (xhr) {
             xhr.setRequestHeader("Authorization", "Basic " + btoa(username + ":" + "123456"));
@@ -83,19 +75,61 @@ function defineSpecsFor(apiRoot) {
           }).then(function (token) {
             expect(token, "X-Auth-Token is null").is.not.empty;
           })
+      }
+      specify("log in user", function () {
+        return login();
+      });
+
+      specify("log out user", function () {
+        var options = {
+          beforeSend: function (xhr) {
+            xhr.setRequestHeader("Authorization", "Basic " + btoa(username + ":" + "123456"));
+          }
+        };
+        return post(apiRoot + "/logout", {}, options).
+          then(function (rdata) {
+            return Q.fcall(function () {
+              return rdata.xhr.status;
+            });
+          }).then(function (status) {
+            expect(status).to.equals(200);
+          })
+      });
+
+      specify("log in user again", function () {
+        return login();
       });
     });
+
+    function createBoard() {
+      var options = {
+        beforeSend: function (xhr) {
+          xhr.setRequestHeader("X-Auth-Token", xauthtoken);
+        }
+      };
+      var boardJson = postJson(apiRoot + "/boards", { name: "My board" }, options);
+
+      return boardJson.then(function (boardFromGet) {
+        expect(boardFromGet).to.have.property("name", "My board");
+        expect(boardFromGet).to.have.property("id").that.is.a('number')
+        boardId = boardFromGet.id;
+      });
+    }
     describe("check boards", function () {
       specify("create a board", function () {
+        return createBoard(); 
+      });
+
+      specify("update a board", function () {
         var options = {
           beforeSend: function (xhr) {
             xhr.setRequestHeader("X-Auth-Token", xauthtoken);
           }
         };
-        var boardJson = postJson(apiRoot + "/boards", { name: "My board" }, options);
+        var boardJson = putJson(apiRoot + "/board/" + boardId, { name: "My board Update" }, options);
 
         return Q.all([
-          expect(boardJson).to.eventually.have.property("name", "My board"),
+          expect(boardJson).to.eventually.have.property("name", "My board Update"),
           expect(boardJson).to.eventually.have.property("id").that.is.a('number')
         ]);
       });
@@ -109,13 +143,42 @@ function defineSpecsFor(apiRoot) {
         var boardJson = getJson(apiRoot + "/boards", options);
         return boardJson.then(function (boardFromGet) {
           expect(boardFromGet).to.have.length(1);
-          expect(boardFromGet[0]).to.have.property("name", "My board");
+          expect(boardFromGet[0]).to.have.property("name", "My board Update");
           expect(boardFromGet[0]).to.have.property("id").that.is.a('number')
-          boardId = boardFromGet[0].id;
+        });
+      });
+
+      specify("delete a board", function () {
+        var options = {
+          beforeSend: function (xhr) {
+            xhr.setRequestHeader("X-Auth-Token", xauthtoken);
+          }
+        };
+        options.data = JSON.stringify({ confirm: "My board Update" });
+        var deleteBaord = delete_(apiRoot + "/board/" + boardId, options);
+
+        return deleteBaord.then(function (rdata) {
+          return Q.fcall(function () {
+            return rdata.xhr.status;
+          });
+        }).then(function (status) {
+          expect(status).to.equals(200);
+
+          var options = {
+            beforeSend: function (xhr) {
+              xhr.setRequestHeader("X-Auth-Token", xauthtoken);
+            }
+          };
+          expect(getJson(apiRoot + "/boards", options)).to.eventually.be.empty;
         });
       });
     });
     describe("check tasks", function () {
+
+      specify("create a board for task checks", function () {
+        return createBoard(); 
+      });
+
       specify("create a task", function () {
         var options = {
           beforeSend: function (xhr) {
@@ -199,6 +262,24 @@ function defineSpecsFor(apiRoot) {
           };
           expect(getJson(apiRoot + "/tasks/" + boardId, options)).to.eventually.be.empty;
         });
+      });
+    });
+    describe("unregister", function () {
+      specify("unregister the user", function () {
+        var options = {
+          beforeSend: function (xhr) {
+            xhr.setRequestHeader("X-Auth-Token", xauthtoken);
+          }
+        };
+        options.data = JSON.stringify({ confirm: "123456" });
+        return delete_(apiRoot + "/unregister", options).
+          then(function (rdata) {
+            return Q.fcall(function () {
+              return rdata.xhr.status;
+            });
+          }).then(function (status) {
+            expect(status).to.equals(200);
+          })
       });
     });
   });
